@@ -1,14 +1,14 @@
-# Publish site/ to GitHub Pages (gadget.means.live) on every push to main and
-# every new Release: the page as it is (no build step), plus the newest
-# Release's files (firmware, app, manifest.json; published by the private
-# repository's tools/publish.sh) in site/firmware/, so images never enter git.
+# Publish site/ to GitHub Pages (gadget.means.live) on every push to main, and
+# when the private repository's tools/publish.sh has made a Release (it starts
+# this workflow on main: the github-pages environment deploys from main only,
+# and a Release's own event runs on its tag): the page as it is (no build
+# step), plus the newest Release's files (firmware, app, manifest.json) in
+# site/firmware/, so images never enter git.
 name: pages
 
 on:
   push:
     branches: [main]
-  release:
-    types: [published]
   workflow_dispatch:
 
 permissions:
