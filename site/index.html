@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gadget</title>
+<meta name="description" content="Firmware installer for the Waveshare ESP32-S3-Touch-AMOLED-1.43C.">
+<style>
+  :root {
+    --bg: #f6f6f4;
+    --fg: #1b1b1a;
+    --muted: #6b6b66;
+    --ok: #1f7a3a;
+    --warn: #a2560b;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121212;
+      --fg: #ececea;
+      --muted: #9a9a94;
+      --ok: #5cc27e;
+      --warn: #e5a04a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 17px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 32rem; text-align: center; }
+  h1 { font-size: 2rem; margin: 0 0 0.25rem; letter-spacing: -0.01em; }
+  p { margin: 0.5rem 0; }
+  .muted { color: var(--muted); }
+  #serial.ok { color: var(--ok); }
+  #serial.no { color: var(--warn); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Gadget</h1>
+  <p class="muted">Firmware for the Waveshare ESP32-S3-Touch-AMOLED-1.43C.</p>
+  <p>The installer is not ready yet.</p>
+  <p id="serial"></p>
+</main>
+<script>
+  // The installer will flash over Web Serial; say now whether this browser has it.
+  const el = document.getElementById("serial");
+  if ("serial" in navigator) {
+    el.textContent = "This browser can flash the board.";
+    el.className = "ok";
+  } else {
+    el.textContent = "Flashing needs Chrome or Edge on a desktop computer.";
+    el.className = "no";
+  }
+</script>
+</body>
+</html>
