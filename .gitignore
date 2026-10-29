@@ -1,3 +1,4 @@
 # Firmware images reach the site at deploy time, never through git.
 site/firmware/
 .DS_Store
+__pycache__/

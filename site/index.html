@@ -4,61 +4,51 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gadget</title>
-<meta name="description" content="Firmware installer for the Waveshare ESP32-S3-Touch-AMOLED-1.43C.">
-<style>
-  :root {
-    --bg: #f6f6f4;
-    --fg: #1b1b1a;
-    --muted: #6b6b66;
-    --ok: #1f7a3a;
-    --warn: #a2560b;
-    color-scheme: light dark;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #121212;
-      --fg: #ececea;
-      --muted: #9a9a94;
-      --ok: #5cc27e;
-      --warn: #e5a04a;
-    }
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    min-height: 100vh;
-    display: grid;
-    place-items: center;
-    padding: 24px 16px;
-    background: var(--bg);
-    color: var(--fg);
-    font: 17px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
-  }
-  main { max-width: 32rem; text-align: center; }
-  h1 { font-size: 2rem; margin: 0 0 0.25rem; letter-spacing: -0.01em; }
-  p { margin: 0.5rem 0; }
-  .muted { color: var(--muted); }
-  #serial.ok { color: var(--ok); }
-  #serial.no { color: var(--warn); }
-</style>
+<meta name="description" content="Install the gadget firmware on a Waveshare ESP32-S3-Touch-AMOLED-1.43C from the browser.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<script type="module" src="js/app.js"></script>
 </head>
 <body>
 <main>
-  <h1>Gadget</h1>
-  <p class="muted">Firmware for the Waveshare ESP32-S3-Touch-AMOLED-1.43C.</p>
-  <p>The installer is not ready yet.</p>
-  <p id="serial"></p>
+  <header>
+    <h1>Gadget</h1>
+    <p class="lede">Firmware for the Waveshare ESP32-S3-Touch-AMOLED-1.43C, installed from this page over USB.</p>
+  </header>
+
+  <section class="card" aria-labelledby="install-title">
+    <h2 id="install-title">Install</h2>
+    <p id="fw" class="meta">Looking for the firmware…</p>
+    <button id="go" class="primary" disabled>Install firmware</button>
+    <div id="bar" class="bar" hidden><div></div></div>
+    <p id="status" role="status" aria-live="polite"></p>
+    <div id="confirm" class="confirm" hidden>
+      <p id="confirm-text"></p>
+      <div class="actions">
+        <button id="confirm-yes" class="danger">Erase and install</button>
+        <button id="confirm-no">Cancel</button>
+      </div>
+    </div>
+  </section>
+
+  <details class="more">
+    <summary>The board is not in the list</summary>
+    <ul>
+      <li>Plug the board into this computer with a USB cable that carries data; some cables only charge.</li>
+      <li>If its screen is dark, touch it or press BOOT: a sleeping board may not show up.</li>
+      <li>Close anything else that may hold the port: <code>mpremote</code>, Thonny, a serial monitor, another tab with this page.</li>
+      <li>Still missing? Start it in download mode. Waveshare's way: hold BOOT, then press PWR to power on.</li>
+    </ul>
+  </details>
+
+  <details class="more">
+    <summary>Log</summary>
+    <pre id="log"></pre>
+  </details>
+
+  <footer>
+    Source: <a href="https://github.com/tucher/gadget-landing">github.com/tucher/gadget-landing</a>
+  </footer>
 </main>
-<script>
-  // The installer will flash over Web Serial; say now whether this browser has it.
-  const el = document.getElementById("serial");
-  if ("serial" in navigator) {
-    el.textContent = "This browser can flash the board.";
-    el.className = "ok";
-  } else {
-    el.textContent = "Flashing needs Chrome or Edge on a desktop computer.";
-    el.className = "no";
-  }
-</script>
 </body>
 </html>
