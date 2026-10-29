@@ -31,6 +31,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }   /* over any display a class sets */
 
 body {
   margin: 0;
@@ -87,11 +88,36 @@ button.danger { background: var(--error); border-color: var(--error); color: var
 .bar.busy > div { width: 30%; animation: slide 1.2s ease-in-out infinite; }
 @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
 
-#status { margin: 1rem 0 0; min-height: 1.55em; }
-#status:empty { display: none; }
-#status.ok { color: var(--ok); font-weight: 600; }
-#status.warn { color: var(--warn); }
-#status.error { color: var(--error); }
+#status, #wifi-status { margin: 1rem 0 0; min-height: 1.55em; }
+#status:empty, #wifi-status:empty { display: none; }
+#status.ok, #wifi-status.ok { color: var(--ok); font-weight: 600; }
+#status.warn, #wifi-status.warn { color: var(--warn); }
+#status.error, #wifi-status.error { color: var(--error); }
+
+.card + .card { margin-top: 16px; }
+.prompt {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+}
+.prompt p { margin: 0 0 12px; }
+
+.wifi { margin-top: 16px; display: grid; gap: 12px; }
+.wifi label { display: grid; gap: 6px; font-weight: 600; font-size: 0.95rem; }
+.wifi select, .wifi input {
+  width: 100%;
+  font: inherit;
+  font-weight: 400;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--fg);
+}
+.wifi input:disabled { opacity: 0.45; }
+.wifi .actions button.primary { width: auto; flex: 1; padding: 10px 18px; font-size: 1rem; }
 
 .confirm {
   margin-top: 16px;

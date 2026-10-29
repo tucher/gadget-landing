@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gadget</title>
-<meta name="description" content="Install the gadget firmware on a Waveshare ESP32-S3-Touch-AMOLED-1.43C from the browser.">
+<meta name="description" content="Install the gadget firmware on a Waveshare ESP32-S3-Touch-AMOLED-1.43C from the browser, and put it on Wi-Fi.">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
 <script type="module" src="js/app.js"></script>
@@ -13,7 +13,7 @@
 <main>
   <header>
     <h1>Gadget</h1>
-    <p class="lede">Firmware for the Waveshare ESP32-S3-Touch-AMOLED-1.43C, installed from this page over USB.</p>
+    <p class="lede">Firmware for the Waveshare ESP32-S3-Touch-AMOLED-1.43C, installed from this page over USB, with its demo app; then Wi-Fi over Bluetooth.</p>
   </header>
 
   <section class="card" aria-labelledby="install-title">
@@ -22,6 +22,12 @@
     <button id="go" class="primary" disabled>Install firmware</button>
     <div id="bar" class="bar" hidden><div></div></div>
     <p id="status" role="status" aria-live="polite"></p>
+    <div id="again" class="prompt" hidden>
+      <p id="again-text"></p>
+      <div class="actions">
+        <button id="again-go" class="primary">Choose the board</button>
+      </div>
+    </div>
     <div id="confirm" class="confirm" hidden>
       <p id="confirm-text"></p>
       <div class="actions">
@@ -31,13 +37,31 @@
     </div>
   </section>
 
+  <section class="card" aria-labelledby="wifi-title">
+    <h2 id="wifi-title">Wi-Fi</h2>
+    <p class="meta">The board joins your network over Bluetooth. Its app offers this by itself while it has no network; otherwise turn on “Wi-Fi setup” on its radio page.</p>
+    <button id="wifi-go" class="primary">Connect the board to Wi-Fi</button>
+    <form id="wifi-form" class="wifi" hidden autocomplete="off">
+      <label>Network
+        <select id="wifi-ssid" hidden></select>
+        <input id="wifi-other" placeholder="Network name" hidden>
+      </label>
+      <label>Password <input id="wifi-pass" type="password" autocomplete="off"></label>
+      <div class="actions">
+        <button type="submit" class="primary">Connect</button>
+        <button type="button" id="wifi-rescan">Look again</button>
+      </div>
+    </form>
+    <p id="wifi-status" role="status" aria-live="polite"></p>
+  </section>
+
   <details class="more">
     <summary>The board is not in the list</summary>
     <ul>
       <li>Plug the board into this computer with a USB cable that carries data; some cables only charge.</li>
       <li>If its screen is dark, touch it or press BOOT: a sleeping board may not show up.</li>
       <li>Close anything else that may hold the port: <code>mpremote</code>, Thonny, a serial monitor, another tab with this page.</li>
-      <li>Still missing? Start it in download mode. Waveshare's way: hold BOOT, then press PWR to power on.</li>
+      <li>An app on the board may have taken its serial port off USB. Start it in download mode: switch it off (hold PWR), then hold BOOT and short-press PWR. It shows up as “USB JTAG/serial debug unit”.</li>
     </ul>
   </details>
 

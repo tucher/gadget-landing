@@ -49,7 +49,7 @@ check("our image: partition table, app slot, descriptor", () => {
     ["nvs", 0x9000, 0x6000],
     ["phy_init", 0xf000, 0x1000],
     ["factory", 0x10000, 0x480000],
-    ["model", 0x490000, 0x100000],
+    ["drive", 0x490000, 0x100000],
     ["coredump", 0x590000, 0x10000],
   ]);
   assert.equal(img.app.label, "factory");
@@ -79,6 +79,20 @@ check("another build of the same layout: an update, nothing erased", () => {
   assert.deepEqual(p.erase, []);
 });
 
+check("the same layout under other names (model, now drive): an update, nothing erased", () => {
+  const flash = image.slice();
+  // Rename the fourth entry and fix the MD5 row.
+  flash.set(new TextEncoder().encode("model\0"), TABLE_OFFSET + 3 * 32 + 12);
+  const rows = 5 * 32;
+  const md5 = md5hex(flash.subarray(TABLE_OFFSET, TABLE_OFFSET + rows));
+  flash.set(md5.match(/../g).map((h) => parseInt(h, 16)), TABLE_OFFSET + rows + 16);
+  const board = boardFrom(flash);
+  assert.equal(board.table[3].label, "model");
+  const p = plan(img, board);
+  assert.equal(p.kind, "update");
+  assert.deepEqual(p.erase, []);
+});
+
 check("erased flash: a fresh install, settings and files erased", () => {
   const p = plan(img, boardFrom(new Uint8Array(FLASH_SIZE).fill(0xff)));
   assert.equal(p.kind, "fresh");
@@ -92,7 +106,7 @@ check("erased flash: a fresh install, settings and files erased", () => {
 check("an older layout of ours with the same NVS: settings kept, files erased", () => {
   const flash = image.slice();
   const view = new DataView(flash.buffer);
-  // Move the model partition (the fourth entry) and fix the MD5 row.
+  // Move the drive partition (the fourth entry) and fix the MD5 row.
   view.setUint32(TABLE_OFFSET + 3 * 32 + 4, 0x4a0000, true);
   const rows = 5 * 32;
   const md5 = md5hex(flash.subarray(TABLE_OFFSET, TABLE_OFFSET + rows));

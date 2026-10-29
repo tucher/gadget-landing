@@ -81,10 +81,12 @@ export function describeImage(image) {
  * board's flash holds: `tableBytes` (TABLE_SIZE bytes from TABLE_OFFSET), its
  * parsed `table`, and `app`, the first app it names that has a descriptor.
  *
- * The same partition table, byte for byte, makes an update: the image is
- * written, and settings (NVS) and files stay.
+ * The same layout makes an update: every partition at the same offset, of the
+ * same size and type (NVS of the same subtype), names aside. The image is
+ * written, its table with it, and settings (NVS) and files stay: MicroPython
+ * keeps its files after the last partition, which did not move.
  *
- * Any other table, or none, makes a fresh install. MicroPython takes the flash
+ * Any other layout, or no table, makes a fresh install. MicroPython takes the flash
  * after the last partition for its filesystem and loops at start-up, before
  * USB comes up, if that area holds anything but a filesystem or erased flash.
  * So everything after the app slot is erased, as `build.sh flash-fresh` does;
@@ -95,12 +97,13 @@ export function describeImage(image) {
 export function plan(image, board) {
   const installed = board.app;
   const sameBuild = !!installed && installed.desc.elfSha256 === image.desc.elfSha256;
-  const same = board.tableBytes.length === image.tableBytes.length &&
-    board.tableBytes.every((b, i) => b === image.tableBytes[i]);
+  const isNvs = (p) => p.type === TYPE_DATA && p.subtype === SUBTYPE_NVS;
+  const alike = (a, b) => a.type === b.type && a.offset === b.offset && a.size === b.size && isNvs(a) === isNvs(b);
+  const same = !!board.table && board.table.length === image.table.length &&
+    board.table.every((p, i) => alike(p, image.table[i]));
   if (same) return { kind: "update", installed, sameBuild, erase: [] };
 
   const erase = [];
-  const isNvs = (p) => p.type === TYPE_DATA && p.subtype === SUBTYPE_NVS;
   const nvs = image.table.find(isNvs);
   const nvsKept = nvs && board.table?.some((p) => isNvs(p) && p.offset === nvs.offset && p.size === nvs.size);
   if (nvs && !nvsKept) erase.push({ offset: nvs.offset, size: nvs.size, what: "settings" });

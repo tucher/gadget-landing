@@ -6,11 +6,13 @@
 
 Needs Playwright (pip install playwright) and Chrome. The page is served from
 site/ on 127.0.0.1, which Chrome treats as secure, as Web Serial requires.
-js/board.js, the only module that touches a board, is replaced by a fake that
-"reads" its flash from real images (erased flash, the staged firmware, a
-copy of it from another build, Waveshare's factory dump) and records what the
-page asks it to do, so each path through the page runs without hardware.
-Also checks that the real board.js and esptool-js load.
+js/board.js and js/repl.js, the only modules that touch a board, are replaced by
+fakes: the board "reads" its flash from real images (erased flash, the staged
+firmware, a copy of it from another build, Waveshare's factory dump), shows up
+as the ROM loader or as TinyUSB's device, and has no app, this app or another;
+both record what the page asks of them, so each path through the page runs
+without hardware. Also checks that the real board.js and esptool-js load.
+bench/host/installer.py in the private repository runs the page on a real board.
 """
 import functools
 import http.server
@@ -29,11 +31,20 @@ FAKE_BOARD = r"""
 import { APP_HEAD_SIZE, TABLE_OFFSET, TABLE_SIZE, parseApp, parseTable } from "./image.js";
 const F = window.FAKE;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+export const USB_SERIAL_JTAG_PID = 0x1001;
+const port = (pid) => ({ getInfo: () => ({ usbVendorId: 0x303a, usbProductId: pid }) });
 export class BoardError extends Error {}
 export async function pickPort() {
   if (F.pick === "cancel") throw new DOMException("No port selected by the user.", "NotFoundError");
-  return {};
+  return port(F.pid ?? USB_SERIAL_JTAG_PID);
 }
+export const isTinyUsb = (p) => (p.getInfo().usbProductId & 0xff00) === 0x4000;
+export async function knownPort(test) { return null; }
+export async function waitForPort(test) {
+  for (const pid of [USB_SERIAL_JTAG_PID, 0x4001]) if (test(port(pid))) return port(pid);
+  return null;
+}
+export async function enterLoader(p) { F.calls.push("loader"); return F.loader !== "stuck"; }
 async function flash() {
   if (F.flash === "erased") return new Uint8Array(0x10200).fill(0xff);
   if (F.flash === "factory") return new Uint8Array(await (await fetch("/__factory.bin")).arrayBuffer());
@@ -74,6 +85,17 @@ export class Board {
 }
 """
 
+FAKE_REPL = r"""
+const F = window.FAKE;
+export class ReplError extends Error {}
+export class Repl {
+  static async open(port) { F.calls.push("repl"); return new Repl(); }
+  async exec(code) { return code.includes("listdir") ? (F.main ?? "") : ""; }
+  async writeFile(path, data, sha256, progress) { F.calls.push(`file ${path}`); progress(1); }
+  async restartApp() { F.calls.push("app"); }
+}
+"""
+
 
 class Quiet(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *args):
@@ -110,6 +132,7 @@ def main():
             if fake is not None:
                 page.add_init_script(f"window.FAKE = Object.assign({{calls: []}}, {json.dumps(fake)});")
                 page.route("**/js/board.js", lambda r: r.fulfill(body=FAKE_BOARD, content_type="text/javascript"))
+                page.route("**/js/repl.js", lambda r: r.fulfill(body=FAKE_REPL, content_type="text/javascript"))
                 if FACTORY.exists():
                     page.route("**/__factory.bin", lambda r: r.fulfill(path=str(FACTORY)))
             if no_firmware:
@@ -156,23 +179,30 @@ def main():
         page.context.close()
 
         erase_all = ["erase 9000+6000", "erase 490000+370000"]
+        app = ["repl", *("file " + f["path"] for f in manifest["app"]["files"]), "app"]
         run("chooser closed: nothing happens", {"pick": "cancel"}, expect_calls=[], expect_status="")
         run("port busy: says so", {"open": "busy"}, expect_calls=["open"], expect_status="port is busy")
-        run("erased flash: installs without asking", {"flash": "erased"},
-            expect_calls=["open", *erase_all, f"write {size}", "restart"], expect_status="Done")
+        run("erased flash: installs without asking, then the app", {"flash": "erased"},
+            expect_calls=["open", *erase_all, f"write {size}", "restart", *app], expect_status="Done")
+        run("running this firmware: into the loader first", {"flash": "other", "pid": 0x4001},
+            expect_calls=["loader", "open", f"write {size}", "restart", *app], expect_status="Done")
+        run("running this firmware, the loader not reached: says how by hand", {"pid": 0x4001, "loader": "stuck"},
+            expect_calls=["loader"], expect_status="Hold BOOT")
+        run("another app on the board: kept", {"flash": "other", "main": "# my own app"},
+            expect_calls=["open", f"write {size}", "restart", "repl", "app"], expect_status="keeps its own app")
         if FACTORY.exists():
             run("factory firmware, cancelled: board restarted, nothing written", {"flash": "factory"}, answer=False,
                 expect_question="01_Fac", expect_calls=["open", "restart"], expect_status="Nothing was changed")
             run("factory firmware, confirmed: erases then writes", {"flash": "factory"}, answer=True,
                 expect_question="erases the settings and files",
-                expect_calls=["open", *erase_all, f"write {size}", "restart"], expect_status="Done")
+                expect_calls=["open", *erase_all, f"write {size}", "restart", *app], expect_status="Done")
         else:
             print("skip factory dump (not found:", FACTORY, ")")
         run("same build installed: asks, then writes without erasing", {"flash": "ours"}, answer=True,
-            expect_question="already runs this build", expect_calls=["open", f"write {size}", "restart"],
+            expect_question="already runs this build", expect_calls=["open", f"write {size}", "restart", *app],
             expect_status="Done")
         run("other build installed: updates without asking", {"flash": "other"},
-            expect_calls=["open", f"write {size}", "restart"], expect_status="Done")
+            expect_calls=["open", f"write {size}", "restart", *app], expect_status="Done")
         run("write fails: says so, leaves the board in its loader", {"flash": "other", "write": "fail"},
             expect_calls=["open", f"write {size}", "close"], expect_status="installation stopped")
 

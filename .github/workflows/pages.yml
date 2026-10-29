@@ -1,10 +1,14 @@
-# Publish site/ as it is to GitHub Pages (gadget.means.live) on every push to
-# main. There is no build step.
+# Publish site/ to GitHub Pages (gadget.means.live) on every push to main and
+# every new Release: the page as it is (no build step), plus the newest
+# Release's files (firmware, app, manifest.json; published by the private
+# repository's tools/publish.sh) in site/firmware/, so images never enter git.
 name: pages
 
 on:
   push:
     branches: [main]
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -25,6 +29,17 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
+      - name: The newest Release into site/firmware
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p site/firmware
+          if gh release view --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release download --repo "$GITHUB_REPOSITORY" --dir site/firmware --clobber
+            ls -l site/firmware
+          else
+            echo "No Release yet: the page says no firmware is published."
+          fi
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
