@@ -35,7 +35,7 @@ jobs:
         run: |
           mkdir -p site/firmware
           if gh release view --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release download --repo "$GITHUB_REPOSITORY" --dir site/firmware --clobber
+            gh release download --repo "$GITHUB_REPOSITORY" --dir site/firmware --pattern '*' --clobber
             ls -l site/firmware
           else
             echo "No Release yet: the page says no firmware is published."
