@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
-"""Put a firmware image, the app installed with it, and their manifest into the site.
+"""Put a firmware image, the apps offered with it, and their manifest into the site.
 
-    python3 tools/stage.py [firmware.bin] [--app DIR] [--version V] [--out site/firmware]
+    python3 tools/stage.py [firmware.bin] [--app DIR ...] [--version V] [--out site/firmware]
 
 The image is what build.sh writes at flash offset 0: bootloader, partition
 table, app. It is copied under a name made from its SHA-256, so that a cached
 copy can never stand in for a newer image, and manifest.json, which the page
-fetches without caching, names the current one. The app's files (default:
-hello-pendant, from the same repository) are copied the same way, as
-app-<sha>-<name>; the page writes them onto the board after the firmware. The
+fetches without caching, names the current one. Each app's files (--app, once
+per app, the first the page's default; without it, hello-pendant from the same
+repository), subfolders included, are copied the same way, as
+app-<sha>-<name>; the page offers the apps by name and the first line of their
+main.py ("name: what it is"), and writes the chosen one's files onto the board
+after the firmware. An app that imports improv is marked as offering Wi-Fi
+setup over Bluetooth, which the page's Wi-Fi step needs. The
 default image is the local build in the private repository this one sits in;
 site/firmware/ is never committed. tools/publish.sh in that repository stages
 into a scratch folder and publishes it as a Release, which the Pages workflow
@@ -19,6 +23,7 @@ import datetime
 import hashlib
 import json
 import pathlib
+import re
 import struct
 import sys
 
@@ -44,22 +49,32 @@ def app_descriptor(image):
 
 def stage_app(app, out):
     files = []
-    for f in sorted(app.iterdir()):
-        if f.is_file() and not f.name.startswith("."):
-            data = f.read_bytes()
-            h = hashlib.sha256(data).hexdigest()
-            name = f"app-{h[:12]}-{f.name}"
-            (out / name).write_bytes(data)
-            files.append({"path": f.name, "file": name, "size": len(data), "sha256": h})
-    if not any(f["path"] == "main.py" for f in files):
+    for f in sorted(app.rglob("*")):
+        rel = f.relative_to(app)
+        if not f.is_file() or any(p.startswith(".") or p == "__pycache__" for p in rel.parts):
+            continue
+        data = f.read_bytes()
+        h = hashlib.sha256(data).hexdigest()
+        name = f"app-{h[:12]}-{f.name}"
+        (out / name).write_bytes(data)
+        files.append({"path": rel.as_posix(), "file": name, "size": len(data), "sha256": h})
+    main = app / "main.py"
+    if not main.is_file():
         sys.exit(f"{app}: no main.py")
-    return {"name": app.name, "files": files}
+    text = main.read_text()
+    first = re.match(r'\s*"""\s*([\w-]+):\s*(.+)', text)
+    return {
+        "name": app.name,
+        "description": first.group(2).strip() if first else "",
+        "wifi_setup": bool(re.search(r"^\s*(import|from)\s+improv\b", text, re.M)),
+        "files": files,
+    }
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("image", nargs="?", default=DEFAULT)
-    ap.add_argument("--app", default=DEFAULT_APP, help="the app the page installs with the firmware")
+    ap.add_argument("--app", action="append", help="an app the page offers with the firmware (repeatable)")
     ap.add_argument("--version", help="shown on the page (default: the image's own, else its build hash)")
     ap.add_argument("--out", default="site/firmware")
     args = ap.parse_args()
@@ -81,11 +96,13 @@ def main():
         "file": name,
         "size": len(image),
         "sha256": sha256,
-        "app": stage_app(pathlib.Path(args.app), out),
+        "apps": [stage_app(pathlib.Path(a), out) for a in args.app or [DEFAULT_APP]],
     }
+    manifest["app"] = manifest["apps"][0]       # for a page from before the choice
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    print(f"{out / name}: {manifest['version']}, built {manifest['built']}, {len(image)} bytes; "
-          f"app {manifest['app']['name']}: {', '.join(f['path'] for f in manifest['app']['files'])}")
+    print(f"{out / name}: {manifest['version']}, built {manifest['built']}, {len(image)} bytes")
+    for a in manifest["apps"]:
+        print(f"  app {a['name']}: {', '.join(f['path'] for f in a['files'])}")
 
 
 if __name__ == "__main__":

@@ -90,7 +90,11 @@ const F = window.FAKE;
 export class ReplError extends Error {}
 export class Repl {
   static async open(port) { F.calls.push("repl"); return new Repl(); }
-  async exec(code) { return code.includes("listdir") ? (F.main ?? "") : ""; }
+  async exec(code) {
+    if (code.includes("os.remove")) F.calls.push("clean");
+    if (code.includes("os.mkdir")) F.calls.push("mkdir");
+    return code.includes("listdir") ? (F.main ?? "") : "";
+  }
   async writeFile(path, data, sha256, progress) { F.calls.push(`file ${path}`); progress(1); }
   async restartApp() { F.calls.push("app"); }
 }
@@ -145,9 +149,11 @@ def main():
             print(("ok   " if cond else "FAIL ") + name + ("" if cond else f"  -- {detail}"))
             failures += not cond
 
-        def run(name, fake, answer=None, expect_calls=None, expect_status=None, expect_question=None):
+        def run(name, fake, answer=None, expect_calls=None, expect_status=None, expect_question=None, choose=None):
             page, errors = page_with(fake)
             page.wait_for_function("!document.getElementById('go').disabled")
+            if choose is not None:
+                page.check(f"#apps input[value='{choose}']")
             page.click("#go")
             if answer is not None:
                 page.wait_for_selector("#confirm:not([hidden])")
@@ -179,7 +185,8 @@ def main():
         page.context.close()
 
         erase_all = ["erase 9000+6000", "erase 490000+370000"]
-        app = ["repl", *("file " + f["path"] for f in manifest["app"]["files"]), "app"]
+        apps = manifest.get("apps") or [manifest["app"]]
+        app = ["repl", *("file " + f["path"] for f in apps[0]["files"]), "app"]
         run("chooser closed: nothing happens", {"pick": "cancel"}, expect_calls=[], expect_status="")
         run("port busy: says so", {"open": "busy"}, expect_calls=["open"], expect_status="port is busy")
         run("erased flash: installs without asking, then the app", {"flash": "erased"},
@@ -190,6 +197,16 @@ def main():
             expect_calls=["loader"], expect_status="Hold BOOT")
         run("another app on the board: kept", {"flash": "other", "main": "# my own app"},
             expect_calls=["open", f"write {size}", "restart", "repl", "app"], expect_status="keeps its own app")
+        if len(apps) > 1:
+            other = apps[1]
+            other_calls = ["repl", *(["mkdir"] if any("/" in f["path"] for f in other["files"]) else []),
+                           *("file " + f["path"] for f in other["files"]), "app"]
+            run(f"{other['name']} chosen: its files", {"flash": "other"}, choose=1,
+                expect_calls=["open", f"write {size}", "restart", *other_calls], expect_status=other["name"])
+            run(f"{apps[0]['name']} on the board, {other['name']} chosen: replaced", {"flash": "other",
+                "main": f'"""{apps[0]["name"]}: ..."""'}, choose=1,
+                expect_calls=["open", f"write {size}", "restart", "repl", "clean", *other_calls[1:]],
+                expect_status=other["name"])
         if FACTORY.exists():
             run("factory firmware, cancelled: board restarted, nothing written", {"flash": "factory"}, answer=False,
                 expect_question="01_Fac", expect_calls=["open", "restart"], expect_status="Nothing was changed")

@@ -1,8 +1,8 @@
-// The installer page: fetch the published firmware and its app as soon as the
+// The installer page: fetch the published firmware and its apps as soon as the
 // page opens; on a click, get the board into its ROM loader (board.js),
 // decide between an update and a fresh install (image.js), ask before
-// anything is erased, write, start the firmware, and write the app's files
-// through the REPL (repl.js). Then, separately, Wi-Fi over Improv
+// anything is erased, write, start the firmware, and write the chosen app's
+// files through the REPL (repl.js). Then, separately, Wi-Fi over Improv
 // (improv.js), with the networks the board itself sees.
 
 import { Board, BoardError, USB_SERIAL_JTAG_PID, enterLoader, isTinyUsb, pickPort, waitForPort } from "./board.js";
@@ -13,6 +13,7 @@ import { Repl, ReplError } from "./repl.js";
 const $ = (id) => document.getElementById(id);
 const ui = {
   fw: $("fw"),
+  apps: $("apps"),
   go: $("go"),
   bar: $("bar"),
   status: $("status"),
@@ -61,6 +62,7 @@ const leaving = (e) => {
 
 function busy(on) {
   ui.go.disabled = on;
+  for (const r of ui.apps.querySelectorAll("input")) r.disabled = on;
   if (on) addEventListener("beforeunload", leaving);
   else removeEventListener("beforeunload", leaving);
 }
@@ -73,10 +75,36 @@ async function loadFirmware() {
   ui.fw.textContent = `Firmware ${manifest.version} · built ${manifest.built} · ${(manifest.size / 1048576).toFixed(1)} MB`;
   ui.go.disabled = false;
 
+  // A manifest from before the choice names one app.
+  const apps = manifest.apps ?? (manifest.app ? [manifest.app] : []);
+  showApps(apps);
   const image = await download(manifest.file, manifest.sha256, "firmware");
-  const app = [];
-  for (const f of manifest.app?.files ?? []) app.push({ ...f, data: await download(f.file, f.sha256, f.path) });
-  return { manifest, image, info: describeImage(image), app };
+  const data = new Map();         // each file once, though two apps may share it
+  for (const a of apps) {
+    for (const f of a.files) if (!data.has(f.file)) data.set(f.file, await download(f.file, f.sha256, f.path));
+  }
+  return {
+    manifest, image, info: describeImage(image),
+    apps: apps.map((a) => ({ ...a, files: a.files.map((f) => ({ ...f, data: data.get(f.file) })) })),
+  };
+}
+
+/** The apps to choose from, the first chosen; no choice to make for one. */
+function showApps(apps) {
+  apps.forEach((a, i) => {
+    const label = document.createElement("label");
+    const radio = Object.assign(document.createElement("input"), { type: "radio", name: "app", value: i, checked: i === 0 });
+    const name = Object.assign(document.createElement("strong"), { textContent: a.name });
+    const what = Object.assign(document.createElement("span"), { textContent: a.description ?? "" });
+    label.append(radio, name, what);
+    ui.apps.append(label);
+  });
+  ui.apps.hidden = apps.length < 2;
+}
+
+function chosenApp(fw) {
+  const r = ui.apps.querySelector("input:checked");
+  return fw.apps[r ? +r.value : 0] ?? null;
 }
 
 async function download(file, sha256, what) {
@@ -135,13 +163,13 @@ async function loaderPort(port) {
 }
 
 /**
- * The app goes onto the board through the REPL once the firmware runs: only
- * where there is no app yet or it is this one, never over another app. The
- * board then starts it.
+ * The chosen app goes onto the board through the REPL once the firmware runs:
+ * where there is no app yet or one of those offered here, never over another
+ * app. The files of the offered app it replaces go. The board then starts it.
  */
-async function installApp(fw) {
-  if (!fw.app.length) return null;
-  const name = fw.manifest.app.name;
+async function installApp(fw, app) {
+  if (!app) return null;
+  const name = app.name;
   say("Waiting for the new firmware to start…");
   progress("busy");
   const port = await waitForPort(isTinyUsb, 20000) ??
@@ -150,13 +178,28 @@ async function installApp(fw) {
   const repl = await Repl.open(port);
   try {
     const head = await repl.exec("import os\nprint(open('main.py').read(300) if 'main.py' in os.listdir() else '')");
-    if (head.trim() && !head.includes(name)) {
+    const was = fw.apps.find((a) => head.includes(a.name));
+    if (head.trim() && !was) {
       log(`main.py is another app; ${name} not installed\n`);
       return `The board keeps its own app; ${name} was not installed.`;
     }
+    if (was && was !== app) {
+      const keep = new Set(app.files.map((f) => f.path));
+      const stale = was.files.map((f) => f.path).filter((p) => !keep.has(p));
+      const dirs = folders(stale).reverse();      // the deepest first, once empty
+      await repl.exec(`import os\nfor p in ${JSON.stringify(stale)}:\n    try:\n        os.remove(p)\n` +
+        `    except OSError:\n        pass\nfor d in ${JSON.stringify(dirs)}:\n    try:\n        os.rmdir(d)\n` +
+        `    except OSError:\n        pass`);
+      log(`${was.name} removed: ${stale.join(", ")}\n`);
+    }
+    const dirs = folders(app.files.map((f) => f.path));
+    if (dirs.length) {
+      await repl.exec(`import os\nfor d in ${JSON.stringify(dirs)}:\n    try:\n        os.mkdir(d)\n` +
+        `    except OSError:\n        pass`);
+    }
     let done = 0;
-    const total = fw.app.reduce((n, f) => n + f.data.length, 0);
-    for (const f of fw.app) {
+    const total = app.files.reduce((n, f) => n + f.data.length, 0);
+    for (const f of app.files) {
       say(`Putting ${name} on the board: ${f.path}…`);
       await repl.writeFile(f.path, f.data, f.sha256, (x) => progress((done + x * f.data.length) / total));
       done += f.data.length;
@@ -224,6 +267,16 @@ function explain(e, writing) {
   return `Something went wrong: ${m}. The log below has the details.`;
 }
 
+/** The folders the paths lie in, each parent before its children. */
+function folders(paths) {
+  const out = new Set();
+  for (const p of paths) {
+    const parts = p.split("/").slice(0, -1);
+    for (let i = 1; i <= parts.length; i++) out.add(parts.slice(0, i).join("/"));
+  }
+  return [...out].sort((a, b) => a.split("/").length - b.split("/").length);
+}
+
 async function install(firmware) {
   // One allowed board plugged in: no need to ask which.
   const allowed = (await navigator.serial.getPorts()).filter(espressif);
@@ -281,11 +334,12 @@ async function install(firmware) {
     progress("busy");
     await board.restart();
     board = null;
-    const kept = await installApp(fw);
+    const chosen = chosenApp(fw);
+    const kept = await installApp(fw, chosen);
     progress(null);
-    const app = fw.app.length && !kept ? ` and ${fw.manifest.app.name}` : "";
+    const app = chosen && !kept ? ` and ${chosen.name}` : "";
     say(`Done: the board runs firmware ${fw.manifest.version}${app}. ${kept ?? ""}`.trim() +
-      (app ? " Next, Wi-Fi below." : ""), "ok");
+      (app && chosen.wifi_setup ? " Next, Wi-Fi below." : ""), "ok");
   } catch (e) {
     progress(null);
     log(`\n${e?.stack ?? e}\n`);
